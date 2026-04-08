@@ -148,6 +148,14 @@ class Model(Generic[T]):
                    self.function_arities[function] == arity
         # Task 7.7
 
+        if is_constant(term.root):
+            return self.constant_interpretations[term.root]
+        elif is_variable(term.root):
+            return assignment[term.root]
+        else:
+            args_values = tuple(self.evaluate_term(arg, assignment) for arg in term.arguments)
+            return self.function_interpretations[term.root][args_values]
+
     def evaluate_formula(self, formula: Formula,
                          assignment: Mapping[str, T] = frozendict()) -> bool:
         """Calculates the truth value of the given formula in the current model
@@ -176,7 +184,49 @@ class Model(Generic[T]):
             assert relation in self.relation_interpretations and \
                    self.relation_arities[relation] in {-1, arity}
         # Task 7.8
-
+        if is_equality(formula.root):
+            left_val = self.evaluate_term(formula.arguments[0], assignment)
+            right_val = self.evaluate_term(formula.arguments[1], assignment)
+            return left_val == right_val
+        
+        if is_relation(formula.root):
+            args_values = tuple(self.evaluate_term(arg, assignment) for arg in formula.arguments)
+            return args_values in self.relation_interpretations[formula.root]
+        
+        if is_unary(formula.root):
+            return not self.evaluate_formula(formula.first, assignment)
+        
+        if is_binary(formula.root):
+            left_val = self.evaluate_formula(formula.first, assignment)
+            right_val = self.evaluate_formula(formula.second, assignment)
+            if formula.root == '&':
+                return left_val and right_val
+            elif formula.root == '|':
+                return left_val or right_val
+            else:
+                return (not left_val) or right_val
+        
+        if is_quantifier(formula.root):
+            variable = formula.variable
+            statement = formula.statement
+            
+            if formula.root == 'A':
+                for element in self.universe:
+                    new_assignment = dict(assignment)
+                    new_assignment[variable] = element
+                    if not self.evaluate_formula(statement, new_assignment):
+                        return False
+                return True
+            else:
+                for element in self.universe:
+                    new_assignment = dict(assignment)
+                    new_assignment[variable] = element
+                    if self.evaluate_formula(statement, new_assignment):
+                        return True
+                return False
+        
+        raise ValueError()
+    
     def is_model_of(self, formulas: AbstractSet[Formula]) -> bool:
         """Checks if the current model is a model of the given formulas.
 
@@ -200,3 +250,30 @@ class Model(Generic[T]):
                 assert relation in self.relation_interpretations and \
                        self.relation_arities[relation] in {-1, arity}
         # Task 7.9
+        
+        for formula in formulas:
+            free_vars = formula.free_variables()
+            if not free_vars:
+                if not self.evaluate_formula(formula):
+                    return False
+            else:
+                variables_list = list(free_vars)
+                indices = [0] * len(variables_list)
+                
+                while True:
+                    assignment = {}
+                    for i, var in enumerate(variables_list):
+                        assignment[var] = list(self.universe)[indices[i]]
+                    
+                    if not self.evaluate_formula(formula, assignment):
+                        return False
+                    
+                    for j in range(len(indices) - 1, -1, -1):
+                        indices[j] += 1
+                        if indices[j] < len(self.universe):
+                            break
+                        indices[j] = 0
+                    else:
+                        break
+        
+        return True
